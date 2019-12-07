@@ -24,15 +24,23 @@ df <- df[complete.cases(df),]
 df <- sample_frac(df, 0.1)
 
 ui <- fluidPage(
-    sliderInput(inputId = "num", 
-        label = "Choose a year",
-        value = 2001, min = 2001, max = 2017),
-    plotOutput("domestic")
+  titlePanel("Chicago Crime"),
+  sidebarLayout(
+    sidebarPanel(
+      sliderInput(inputId = "num",
+          label = "Choose a year",
+          value = 2001, min = 2001, max = 2017),
+    ),
+    mainPanel(
+      tabsetPanel(type = "tabs",
+                  tabPanel("Domestic",plotOutput("domestic")),
+                  tabPanel("Types", plotOutput("types"))
+      )
+    )
+  )
 )
 
-
 server <- function(input, output) {
-  
   output$domestic <- renderPlot({
     df %>%
       dplyr::filter(Year == input$num) %>%
@@ -43,6 +51,17 @@ server <- function(input, output) {
         theme(axis.text.x = element_text(angle = 90, size=5)) +
         ggtitle("Counts of domestic and non-domestic crimes") +
         labs(y="Count of occurrences", x = "Domestic")
+  })
+
+  output$types <- renderPlot({
+    df %>%  count(`Primary Type`, Year) %>%
+      ggplot(aes(x=as.numeric(Year), y=as.numeric(n), colour=`Primary Type`, group=`Primary Type`, label = `Primary Type`)) + 
+      geom_line() +
+      facet_wrap(~`Primary Type`, ncol = 12) +
+      theme_linedraw() +
+      theme(legend.position = "none", axis.text.x = element_text(angle = 45, size=5)) +
+      ggtitle("Types of crimes, per year, from 2001 to 2017") +
+      labs(y="Count of occurrences", x = "Year")
   })
 }
 
