@@ -5,9 +5,10 @@ library(sf)
 library(here)
 library(stringr)
 library(shiny)
+library(shinythemes)
 library(lubridate)
 
-# load crime data 
+# load crime data
 #setwd("/Users/paulosoares/DataViz_Nadia")
 
 c1 <- read_csv("./Chicago_Crimes_2001_to_2004.csv")
@@ -20,7 +21,7 @@ df$X1 <- NULL
 
 df <- df %>% distinct()
 df <- df[complete.cases(df),]
-df <- df %>% filter(Year != 2001 & Year != 2017) # Filtering out the incomplete years.
+df <- df %>% dplyr::filter(Year != 2001 & Year != 2017) # Filtering out the incomplete years.
 
 df$Date <- mdy_hms(df$Date)
 df$Hour <- substring(df$Date, 12,13)
@@ -31,12 +32,13 @@ df$Weekday = as.factor(weekdays(df$Date))
 df <- sample_frac(df, 0.1)
 
 ui <- fluidPage(
+  theme = shinytheme("flatly"),
   titlePanel("Chicago Crime"),
   sidebarLayout(
     sidebarPanel(
       sliderInput(inputId = "num",
-          label = "Choose a year",
-          value = 2002, min = 2002, max = 2016),
+          label = "Choose a range",
+          value = c(2002, 2016), min = 2002, max = 2016)
     ),
     mainPanel(
       tabsetPanel(type = "tabs",
@@ -50,48 +52,61 @@ ui <- fluidPage(
 
 server <- function(input, output) {
   output$year <- renderPlot({
-    df %>% count(Year) %>% ggplot(aes(x=Year, y=n)) + 
-      geom_bar(stat="identity", fill="darkturquoise") +
-      scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
-      scale_y_continuous(labels = comma, breaks = scales::pretty_breaks(n = 14)) +
-      theme(axis.text.x = element_text(angle = 90, size=10),
-            axis.text.y = element_text(size=10),
-            axis.title = element_text(size=14)) +
-      ggtitle("Number of crimes, per year, from 2002 to 2016") +
-      labs(y="Count of occurrences", x = "Year") +
-      theme(legend.position = "none")
+    df %>%
+      dplyr::filter(Year >= input$num[1] & Year <= input$num[2]) %>%
+      count(Year) %>%
+      ggplot(aes(x=Year, y=n)) +
+        geom_bar(stat="identity", fill="darkturquoise") +
+        scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
+        scale_y_continuous(labels = comma, breaks = scales::pretty_breaks(n = 14)) +
+        theme(axis.text.x = element_text(angle = 90, size=10),
+              axis.text.y = element_text(size=10),
+              axis.title = element_text(size=14)) +
+        ggtitle("Number of crimes, per year") +
+        labs(y="Count of occurrences", x = "Year") +
+        theme(legend.position = "none")
   })
 
   output$month <- renderPlot({
-    df %>% group_by(Year) %>% count(Month) %>%
+    df %>%
+      dplyr::filter(Year >= input$num[1] & Year <= input$num[2]) %>%
+      group_by(Year) %>%
+      count(Month) %>%
       ungroup(Month) %>%
       mutate(Month = factor(Month, levels=c("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"))) %>%
       ggplot(aes(x=as.factor(Month), y=n))+
-      geom_boxplot()+
-      ggtitle("Distribution crimes per year by month") +
-      labs(y="Occurrences per year", x = "Month")
+        geom_boxplot() +
+        ggtitle("Distribution crimes per year by month") +
+        labs(y="Occurrences per year", x = "Month")
   })
 
   output$weekday <- renderPlot({
-    df %>% group_by(Year) %>% count(Weekday) %>%
+    df %>%
+      dplyr::filter(Year >= input$num[1] & Year <= input$num[2]) %>%
+      group_by(Year) %>%
+      count(Weekday) %>%
       ungroup(Weekday) %>%
       mutate(Weekday = factor(Weekday, levels=c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))) %>%
       ggplot(aes(x=as.factor(Weekday), y=n))+
-      geom_boxplot()+
-      ggtitle("Distribution crimes per year by weekday") +
-      labs(y="Occurrences per year", x = "Weekday")
+        geom_boxplot() +
+        ggtitle("Distribution crimes per year by weekday") +
+        labs(y="Occurrences per year", x = "Weekday")
   })
 
   output$hour <- renderPlot({
-    df %>% group_by(Year) %>% count(Hour) %>% ggplot(aes(x=as.factor(Hour), y=n))+
-      geom_boxplot()+
-      ggtitle("Distribution crimes per year by the Hours of the day") +
-      labs(y="Occurrences per year", x = "Hour")
+    df %>%
+      dplyr::filter(Year >= input$num[1] & Year <= input$num[2]) %>%
+      group_by(Year) %>%
+      count(Hour) %>%
+      ggplot(aes(x=as.factor(Hour), y=n)) +
+        geom_boxplot() +
+        ggtitle("Distribution crimes per year by the Hours of the day") +
+        labs(y="Occurrences per year", x = "Hour")
   })
 
   output$domestic <- renderPlot({
     df %>%
-      dplyr::filter(Year == input$num) %>%
+      dplyr::filter(Year >= input$num[1] & Year <= input$num[2]) %>%
       count(Domestic) %>%
       ggplot(aes(x=reorder(as.factor(Domestic), n), y=n, fill=Domestic)) + 
         geom_bar(stat="identity") +
@@ -103,61 +118,72 @@ server <- function(input, output) {
 
   output$domesticTypes <- renderPlot({
     df %>%
-      filter(Domestic == TRUE) %>%
+      dplyr::filter(Year >= input$num[1] & Year <= input$num[2]) %>%
+      dplyr::filter(Domestic == TRUE) %>%
       count(`Primary Type`, Domestic) %>%
       ggplot(aes(x=reorder(as.factor(`Primary Type`), n), y=n, fill=Domestic)) + 
       geom_bar(stat="identity") +
       coord_flip() +
       scale_y_continuous(labels = comma, breaks = scales::pretty_breaks(n = 20)) +
       theme(axis.text.x = element_text(angle = 90, size=5)) +
-      ggtitle("Primary types of crimes in Chicago from 2002 to 2016") +
+      ggtitle("Primary types of crimes in Chicago") +
       labs(y="Count of occurrences", x = "Primary type of crime") +
       theme(legend.position = "none")
   })
   
   output$types <- renderPlot({
-    df %>%  count(`Primary Type`, Year) %>%
+    df %>%
+      dplyr::filter(Year >= input$num[1] & Year <= input$num[2]) %>%
+      count(`Primary Type`, Year) %>%
       ggplot(aes(x=as.numeric(Year), y=as.numeric(n), colour=`Primary Type`, group=`Primary Type`, label = `Primary Type`)) + 
-      geom_line() +
-      facet_wrap(~`Primary Type`, ncol = 12) +
-      theme_linedraw() +
-      theme(legend.position = "none", axis.text.x = element_text(angle = 45, size=5)) +
-      ggtitle("Types of crimes, per year, from 2002 to 2016") +
-      labs(y="Count of occurrences", x = "Year")
+        geom_line() +
+        facet_wrap(~`Primary Type`, ncol = 12) +
+        theme_linedraw() +
+        theme(legend.position = "none", axis.text.x = element_text(angle = 45, size=5)) +
+        ggtitle("Types of crimes, per year") +
+        labs(y="Count of occurrences", x = "Year")
   })
   
   output$topTypes <- renderPlot({
-    df %>% filter(`Primary Type` == "THEFT" | `Primary Type` == "BATTERY" |`Primary Type` == "CRIMINAL DAMAGE" | `Primary Type` == "NARCOTICS"|`Primary Type` == "OTHER OFFENSE" | `Primary Type` == "ASSAULT") %>%
+    df %>%
+      dplyr::filter(Year >= input$num[1] & Year <= input$num[2]) %>%
+      dplyr::filter(`Primary Type` == "THEFT" | `Primary Type` == "BATTERY" |`Primary Type` == "CRIMINAL DAMAGE" | `Primary Type` == "NARCOTICS"|`Primary Type` == "OTHER OFFENSE" | `Primary Type` == "ASSAULT") %>%
       count(`Primary Type`, Year) %>% 
       ggplot(aes(x=as.numeric(Year), y=as.numeric(n), colour=`Primary Type`, group=`Primary Type`, label = `Primary Type`)) + 
-      geom_line() +
-      #geom_point() +
-      #geom_text(aes(label = `Primary Type`), vjust = -0.5) +
-      scale_y_continuous(labels = comma, breaks = scales::pretty_breaks(n = 10)) +
-      scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
-      ggtitle("Number of crimes, per year, from 2002 to 2016") +
-      labs(y="Count of occurrences", x = "Year")+
-      theme(axis.text.x = element_text(angle = 45, size=5))
+        geom_line() +
+        #geom_point() +
+        #geom_text(aes(label = `Primary Type`), vjust = -0.5) +
+        scale_y_continuous(labels = comma, breaks = scales::pretty_breaks(n = 10)) +
+        scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
+        ggtitle("Number of crimes, per year") +
+        labs(y="Count of occurrences", x = "Year")+
+        theme(axis.text.x = element_text(angle = 45, size=5))
   })
   
   output$typeVsArrests <- renderPlot({
-    df %>% count(`Primary Type`, Arrest) %>% ggplot(aes(x=reorder(as.factor(`Primary Type`), n), y=n, fill=Arrest)) + 
-      geom_bar(stat="identity") +
-      coord_flip() +
-      scale_y_continuous(labels = comma, breaks = scales::pretty_breaks(n = 20)) +
-      theme(axis.text.x = element_text(angle = 90, size=5)) +
-      ggtitle("Primary types of crimes in Chicago from 2002 to 2016") +
-      labs(y="Count of occurrences", x = "Primary type of crime") # TODO: Fix titulos. Fix location_description. Aggregar os q tem pouco numa categoria Other.
+    df %>%
+      dplyr::filter(Year >= input$num[1] & Year <= input$num[2]) %>%
+      count(`Primary Type`, Arrest) %>%
+      ggplot(aes(x=reorder(as.factor(`Primary Type`), n), y=n, fill=Arrest)) + 
+        geom_bar(stat="identity") +
+        coord_flip() +
+        scale_y_continuous(labels = comma, breaks = scales::pretty_breaks(n = 20)) +
+        theme(axis.text.x = element_text(angle = 90, size=5)) +
+        ggtitle("Primary types of crimes in Chicago") +
+        labs(y="Count of occurrences", x = "Primary type of crime") # TODO: Fix titulos. Fix location_description. Aggregar os q tem pouco numa categoria Other.
   })
   
   output$typeVsDomestic <- renderPlot({
-    df %>% count(`Primary Type`, Domestic) %>% ggplot(aes(x=reorder(as.factor(`Primary Type`), n), y=n, fill=Domestic)) + 
-      geom_bar(stat="identity") +
-      coord_flip() +
-      scale_y_continuous(labels = comma, breaks = scales::pretty_breaks(n = 20)) +
-      theme(axis.text.x = element_text(angle = 90, size=5)) +
-      ggtitle("Primary types of crimes in Chicago from 2002 to 2016") +
-      labs(y="Count of occurrences", x = "Primary type of crime")
+    df %>%
+      dplyr::filter(Year >= input$num[1] & Year <= input$num[2]) %>%
+      count(`Primary Type`, Domestic) %>%
+      ggplot(aes(x=reorder(as.factor(`Primary Type`), n), y=n, fill=Domestic)) + 
+        geom_bar(stat="identity") +
+        coord_flip() +
+        scale_y_continuous(labels = comma, breaks = scales::pretty_breaks(n = 20)) +
+        theme(axis.text.x = element_text(angle = 90, size=5)) +
+        ggtitle("Primary types of crimes in Chicago") +
+        labs(y="Count of occurrences", x = "Primary type of crime")
   })
 }
 
