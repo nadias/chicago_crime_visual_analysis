@@ -7,6 +7,7 @@ library(stringr)
 library(shiny)
 library(shinythemes)
 library(lubridate)
+library(wordcloud)
 
 # load crime data
 #setwd("/Users/paulosoares/DataViz_Nadia")
@@ -43,8 +44,33 @@ ui <- fluidPage(
     mainPanel(
       tabsetPanel(type = "tabs",
                   tabPanel("Time", plotOutput("year"), plotOutput("month"), plotOutput("weekday"), plotOutput("hour")),
-                  tabPanel("Domestic", plotOutput("domestic"), plotOutput("domesticTypes")),
-                  tabPanel("Types", plotOutput("types"), plotOutput("topTypes"), plotOutput("typeVsArrests"), plotOutput("typeVsDomestic"))
+                  tabPanel("Domestic", plotOutput("domestic"), plotOutput("domesticTypes")), # por 1 word cloud ou o barplot das descricoes
+                  tabPanel("Types",
+                           plotOutput("types"),
+                           plotOutput("topTypes"),
+                           fluidRow(
+                             column(width = 6,
+                                    plotOutput("typeVsArrests", height = 500,
+                                               brush = brushOpts(
+                                                 id = "plot2_brush",
+                                                 resetOnNew = TRUE
+                                               )
+                                    )
+                             ),
+                             column(width = 6,
+                                    plotOutput("typeVsArrests_Zoom", height = 500)
+                             )
+                           ),
+                           plotOutput("typeVsDomestic"),
+                           fluidRow(
+                              h4("Top descriptions"),
+                             column(width = 4, plotOutput("descriptionCloud")),
+                             h4("Top descriptions of domestic crimes"),
+                             column(width = 4, plotOutput("descriptionCloud_Domestic")),
+                             h4("Top descriptions of arrest crimes"),
+                             column(width = 4, plotOutput("descriptionCloud_Arrest"))
+                           )
+                  )
       )
     )
   )
@@ -52,11 +78,18 @@ ui <- fluidPage(
 
 server <- function(input, output) {
   output$year <- renderPlot({
+    a <- table(df %>%
+                dplyr::filter(Year >= input$num[1] & Year <= input$num[2]) %>%
+                dplyr::select(Year))
+    m <- mean(a)
     df %>%
       dplyr::filter(Year >= input$num[1] & Year <= input$num[2]) %>%
       count(Year) %>%
       ggplot(aes(x=Year, y=n)) +
         geom_bar(stat="identity", fill="darkturquoise") +
+        geom_text(aes(label=n, angle=45)) +
+        geom_hline(yintercept = m, linetype="dashed") +
+        geom_label(aes(input$num[2], m, label = paste("mean = ",format(m)), vjust = -0.5)) +
         scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
         scale_y_continuous(labels = comma, breaks = scales::pretty_breaks(n = 14)) +
         theme(axis.text.x = element_text(angle = 90, size=10),
@@ -105,11 +138,22 @@ server <- function(input, output) {
   })
 
   output$domestic <- renderPlot({
+    df_domestic_mean <- df %>%
+                          dplyr::filter(Year >= input$num[1] & Year <= input$num[2]) %>%
+                          select(Domestic, Year)
+    freq <- table(df_domestic_mean)
+    w <- rep(1, times = ncol(freq))
+    m <- rowMeans(freq, na.rm = TRUE)
+    
+    dat_hlines <- data.frame(Domestic=c(names(m)[1],names(m)[2]), n=c(m[[1]],m[[2]]))
+    dat_hlines <- dat_hlines[c(2,1),]
     df %>%
       dplyr::filter(Year >= input$num[1] & Year <= input$num[2]) %>%
       count(Domestic) %>%
       ggplot(aes(x=reorder(as.factor(Domestic), n), y=n, fill=Domestic)) + 
         geom_bar(stat="identity") +
+        geom_errorbar(data=dat_hlines, aes(y=NULL, ymax=n, ymin=n), colour="#000000", linetype="dashed") +
+        geom_text(aes(dat_hlines$Domestic, dat_hlines$n, label = paste("mean =",format(dat_hlines$n)), vjust = -0.5)) +
         scale_y_continuous(labels = comma, breaks = scales::pretty_breaks(n = 10)) +
         theme(axis.text.x = element_text(angle = 90, size=5)) +
         ggtitle("Counts of domestic and non-domestic crimes") +
@@ -160,30 +204,90 @@ server <- function(input, output) {
         theme(axis.text.x = element_text(angle = 45, size=5))
   })
   
+  ranges2 <- reactiveValues(x = NULL, y = NULL)
+  
   output$typeVsArrests <- renderPlot({
     df %>%
       dplyr::filter(Year >= input$num[1] & Year <= input$num[2]) %>%
       count(`Primary Type`, Arrest) %>%
-      ggplot(aes(x=reorder(as.factor(`Primary Type`), n), y=n, fill=Arrest)) + 
+      ggplot(aes(x=reorder(as.factor(`Primary Type`), -n), y=n, fill=Arrest)) + 
         geom_bar(stat="identity") +
-        coord_flip() +
+        #coord_flip() +
+        scale_y_continuous(labels = comma, breaks = scales::pretty_breaks(n = 20)) +
+        theme(axis.text.x = element_text(angle = 90, size=5)) +
+        ggtitle("Primary types of crimes in Chicago") +
+        labs(y="Count of occurrences", x = "Primary type of crime") +
+        theme(legend.position = "none") # TODO: Fix titulos. Fix location_description. Aggregar os q tem pouco numa categoria Other.
+  })
+  
+  output$typeVsArrests_Zoom <- renderPlot({
+    df %>%
+      dplyr::filter(Year >= input$num[1] & Year <= input$num[2]) %>%
+      count(`Primary Type`, Arrest) %>%
+      ggplot(aes(x=reorder(as.factor(`Primary Type`), -n), y=n, fill=Arrest)) + 
+        geom_bar(stat="identity") +
+        #coord_flip() +
+        coord_cartesian(xlim = ranges2$x, ylim = ranges2$y, expand = FALSE) +
         scale_y_continuous(labels = comma, breaks = scales::pretty_breaks(n = 20)) +
         theme(axis.text.x = element_text(angle = 90, size=5)) +
         ggtitle("Primary types of crimes in Chicago") +
         labs(y="Count of occurrences", x = "Primary type of crime") # TODO: Fix titulos. Fix location_description. Aggregar os q tem pouco numa categoria Other.
   })
   
+  observe({
+    brush <- input$plot2_brush
+    if (!is.null(brush)) {
+      ranges2$x <- c(brush$xmin, brush$xmax)
+      ranges2$y <- c(brush$ymin, brush$ymax)
+      
+    } else {
+      ranges2$x <- NULL
+      ranges2$y <- NULL
+    }
+  })
+
   output$typeVsDomestic <- renderPlot({
     df %>%
       dplyr::filter(Year >= input$num[1] & Year <= input$num[2]) %>%
       count(`Primary Type`, Domestic) %>%
-      ggplot(aes(x=reorder(as.factor(`Primary Type`), n), y=n, fill=Domestic)) + 
+      ggplot(aes(x=reorder(as.factor(`Primary Type`), -n), y=n, fill=Domestic)) + 
         geom_bar(stat="identity") +
-        coord_flip() +
+        #coord_flip() +
         scale_y_continuous(labels = comma, breaks = scales::pretty_breaks(n = 20)) +
         theme(axis.text.x = element_text(angle = 90, size=5)) +
         ggtitle("Primary types of crimes in Chicago") +
         labs(y="Count of occurrences", x = "Primary type of crime")
+  })
+  
+  wordcloud_rep <- repeatable(wordcloud)
+  
+  output$descriptionCloud <- renderPlot({
+    v <- table(df %>%
+                 dplyr::filter(Year >= input$num[1] & Year <= input$num[2]) %>%
+                 dplyr::select(Description))
+    wordcloud_rep(names(v), v, scale=c(3,0.2),
+                  min.freq = 6800,
+                  colors=brewer.pal(8, "Dark2"))
+  })
+  
+  output$descriptionCloud_Domestic <- renderPlot({
+    v <- table(df %>%
+                 dplyr::filter(Year >= input$num[1] & Year <= input$num[2]) %>%
+                 dplyr::filter(Domestic == TRUE) %>%
+                 dplyr::select(Description))
+    wordcloud_rep(names(v), v, scale=c(3,0.2),
+                  min.freq = 2800,
+                  colors=brewer.pal(8, "Dark2"))
+  })
+  
+  output$descriptionCloud_Arrest <- renderPlot({
+    v <- table(df %>%
+                 dplyr::filter(Year >= input$num[1] & Year <= input$num[2]) %>%
+                 dplyr::filter(Arrest == TRUE) %>%
+                 dplyr::select(Description))
+    wordcloud_rep(names(v), v, scale=c(3,0.2),
+                  min.freq = 4800,
+                  colors=brewer.pal(8, "Dark2"))
   })
 }
 
