@@ -1,1 +1,3 @@
 # chicago_crime_visual_analysis
+
+This project explores the Chicago Crime dataset, extended with information about population density, socioeco- nomic indicators, languages spoken and the shape of community areas. We created a interactive tool, which includes interactive and animated map visualizations, and a dashboard, allowing to answer on the changes of crime over time, across the city and with respect to socioeconomic factors.
